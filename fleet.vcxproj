@@ -76,7 +76,7 @@
       <WarningLevel>Level3</WarningLevel>
       <DebugInformationFormat>ProgramDatabase</DebugInformationFormat>
       <Optimization>MaxSpeed</Optimization>
-      <AdditionalIncludeDirectories>$(SolutionDir)\external\SDL2\include;$(SolutionDir)\external\GLEW\include;$(SolutionDir)\external\SDL_image\include;$(SolutionDir)\external\SDL_ttf\include;$(SolutionDir)\game;$(SolutionDir)\gamma;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>$(SolutionDir)\external\SDL2\include;$(SolutionDir)\external\GLEW\include;$(SolutionDir)\external\SDL_image\include;$(SolutionDir)\external\SDL_ttf\include;$(SolutionDir)\fleet;$(SolutionDir)\gamma;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <BasicRuntimeChecks>Default</BasicRuntimeChecks>
       <LanguageStandard>stdcpp17</LanguageStandard>
     </ClCompile>
@@ -97,7 +97,7 @@
       <RuntimeLibrary>MultiThreadedDLL</RuntimeLibrary>
       <WarningLevel>Level3</WarningLevel>
       <DebugInformationFormat>ProgramDatabase</DebugInformationFormat>
-      <AdditionalIncludeDirectories>$(SolutionDir)\external\SDL2\include;$(SolutionDir)\external\GLEW\include;$(SolutionDir)\external\SDL_image\include;$(SolutionDir)\external\SDL_ttf\include;$(SolutionDir)\game;$(SolutionDir)\gamma;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>$(SolutionDir)\external\SDL2\include;$(SolutionDir)\external\GLEW\include;$(SolutionDir)\external\SDL_image\include;$(SolutionDir)\external\SDL_ttf\include;$(SolutionDir)\fleet;$(SolutionDir)\gamma;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <LanguageStandard>stdcpp20</LanguageStandard>
     </ClCompile>
     <Link>
@@ -238,6 +238,7 @@
     <ClInclude Include="external\sdl2\include\SDL_video.h" />
     <ClInclude Include="external\sdl2\include\SDL_vulkan.h" />
     <ClInclude Include="external\sdl_image\include\SDL_image.h" />
+    <ClInclude Include="fleet\gamma_flags.h" />
     <ClInclude Include="gamma\Gamma.h" />
     <ClInclude Include="gamma\math\constants.h" />
     <ClInclude Include="gamma\math\geometry.h" />
