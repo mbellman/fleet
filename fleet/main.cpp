@@ -116,8 +116,11 @@ internal void updateGame(GmContext* context, GameState& state, float dt) {
   // Update ships
   {
     auto& player = get_player();
+    float roll = -0.25f * (state.velocity.x / MAX_VELOCITY);
+    float pitch = 0.25f * (state.velocity.z / MAX_VELOCITY);
 
     player.position = camera.position - Vec3f(0, 500.f, 0) + Vec3f(0, 0, 200.f) + state.offset;
+    player.rotation = Quaternion::fromAxisAngle(Vec3f(0, 0, 1), roll) * Quaternion::fromAxisAngle(Vec3f(1, 0, 0), pitch);
 
     commit(player);
   }
