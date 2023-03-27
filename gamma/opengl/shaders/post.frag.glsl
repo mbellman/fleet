@@ -137,7 +137,7 @@ void main() {
   #endif
 
   // @todo make atmospherics optional via a flag
-  out_color = getAtmosphericsColor(out_color, screen_warp_uv, frag_color_and_depth.w, linear_frag_depth);
+  // out_color = getAtmosphericsColor(out_color, screen_warp_uv, frag_color_and_depth.w, linear_frag_depth);
   out_color = getToonShadedColor(out_color, screen_warp_uv, frag_color_and_depth.w, linear_frag_depth);
 
   // Game-specific modifications below
