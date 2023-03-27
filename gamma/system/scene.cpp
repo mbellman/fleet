@@ -200,18 +200,17 @@ Gamma::Object& Gm_CreateObjectFrom(GmContext* context, u16 meshIndex) {
 }
 
 void Gm_Commit(GmContext* context, const Gamma::Object& object) {
-  auto& meshes = context->scene.meshes;
   auto& record = object._record;
-  auto* mesh = meshes[record.meshIndex];
+  auto& objects = context->scene.meshes[record.meshIndex]->objects;
 
   // @todo (?) dispatch transform commands to separate buckets for multithreading
-  mesh->objects.transformById(record.id, Matrix4f::transformation(
+  objects.transformById(record.id, Matrix4f::transformation(
     object.position,
     object.scale,
     object.rotation
   ).transpose());
 
-  mesh->objects.setColorById(record.id, object.color);
+  objects.setColorById(record.id, object.color);
 }
 
 Gamma::ObjectPool& Gm_GetObjects(GmContext* context, const std::string& meshName) {
