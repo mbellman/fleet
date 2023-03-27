@@ -7,8 +7,14 @@ using namespace Gamma;
 // @todo move to game constants
 constexpr static float MAX_DT = 1.f / 30.f;
 constexpr static float LEVEL_1_ALTITUDE = 5000.f;
+constexpr static float MAX_VELOCITY = 400.f;
 
-internal void initializeGame(GmContext* context) {
+struct GameState {
+  Vec3f velocity;
+  Vec3f offset;
+};
+
+internal void initializeGame(GmContext* context, GameState& state) {
   // Engine/scene configuration
   {
     auto& camera = get_camera();
@@ -56,10 +62,43 @@ internal void initializeGame(GmContext* context) {
   }
 }
 
-internal void updateGame(GmContext* context, float dt) {
+internal void updateGame(GmContext* context, GameState& state, float dt) {
   auto& camera = get_camera();
+  auto& input = get_input();
 
   camera.position.z += 2000.f * dt;
+
+  // Handle input
+  {
+    Vec3f acceleration;
+    const float rate = 3000.f;
+
+    if (input.isKeyHeld(Key::ARROW_UP)) {
+      acceleration.z += rate * dt;
+    }
+
+    if (input.isKeyHeld(Key::ARROW_DOWN)) {
+      acceleration.z -= rate * dt;
+    }
+
+    if (input.isKeyHeld(Key::ARROW_LEFT)) {
+      acceleration.x -= rate * dt;
+    }
+
+    if (input.isKeyHeld(Key::ARROW_RIGHT)) {
+      acceleration.x += rate * dt;
+    }
+
+    state.velocity += acceleration;
+
+    if (state.velocity.magnitude() > MAX_VELOCITY) {
+      state.velocity = state.velocity.unit() * MAX_VELOCITY;
+    }
+
+    state.offset += state.velocity * dt;
+
+    state.velocity *= (1.f - 7.f * dt);
+  }
 
   // Sync ocean plane position to camera
   {
@@ -78,7 +117,7 @@ internal void updateGame(GmContext* context, float dt) {
   {
     auto& player = get_player();
 
-    player.position = camera.position - Vec3f(0, 500.f, 0) + Vec3f(0, 0, 200.f);
+    player.position = camera.position - Vec3f(0, 500.f, 0) + Vec3f(0, 0, 200.f) + state.offset;
 
     commit(player);
   }
@@ -87,7 +126,9 @@ internal void updateGame(GmContext* context, float dt) {
 
   // Debug messages
   #if GAMMA_DEVELOPER_MODE == 1
-    add_debug_message("Position: " + Gm_ToString(camera.position));
+    add_debug_message("Camera: " + Gm_ToString(camera.position));
+    add_debug_message("Velocity: " + Gm_ToString(state.velocity));
+    add_debug_message("Position: " + Gm_ToString(state.offset));
   #endif
 }
 
@@ -95,12 +136,12 @@ int main(int argc, char* argv[]) {
   using namespace Gamma;
 
   auto* context = Gm_CreateContext();
-  // GameState state;
+  GameState state;
 
   Gm_OpenWindow(context, "Fleet", { 1200, 675 });
   Gm_SetRenderMode(context, GmRenderMode::OPENGL);
 
-  initializeGame(context);
+  initializeGame(context, state);
 
   auto& input = get_input();
   auto& camera = get_camera();
@@ -135,7 +176,7 @@ int main(int argc, char* argv[]) {
       dt = MAX_DT;
     }
 
-    updateGame(context, dt);
+    updateGame(context, state, dt);
 
     // if (Gm_IsWindowFocused()) {
     //   camera.orientation.pitch += input.getMouseDelta().y / 1000.f;
