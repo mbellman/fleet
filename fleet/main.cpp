@@ -95,9 +95,17 @@ int main(int argc, char* argv[]) {
     }
   });
 
-  input.on<Key>("keydown", [](Key key) {
+  bool fullscreen = false;
+
+  input.on<Key>("keydown", [context, &fullscreen](Key key) {
     if (key == Key::ESCAPE) {
       Gm_UnfocusWindow();
+    }
+
+    if (key == Key::F) {
+      fullscreen = !fullscreen;
+
+      Gm_SetFullScreen(context, fullscreen);
     }
   });
 

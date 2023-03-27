@@ -292,3 +292,19 @@ void Gm_FocusWindow() {
 void Gm_UnfocusWindow() {
   SDL_SetRelativeMouseMode(SDL_FALSE);
 }
+
+void Gm_SetFullScreen(GmContext* context, bool fullscreen) {
+  auto* sdlWindow = context->window.sdl_window;
+
+  if (fullscreen) {
+    SDL_DisplayMode display;
+
+    SDL_GetDesktopDisplayMode(0, &display);
+
+    SDL_SetWindowFullscreen(sdlWindow, SDL_WINDOW_FULLSCREEN);
+    Gm_SetWindowSize(context, { u32(display.w), u32(display.h) });
+  } else {
+    SDL_SetWindowFullscreen(sdlWindow, 0);
+    Gm_SetWindowSize(context, { 1200, 720 });
+  }
+}

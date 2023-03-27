@@ -54,3 +54,5 @@ void Gm_DestroyContext(GmContext* context);
 bool Gm_IsWindowFocused();
 void Gm_FocusWindow();
 void Gm_UnfocusWindow();
+
+void Gm_SetFullScreen(GmContext* context, bool fullscreen);
