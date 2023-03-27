@@ -194,7 +194,7 @@ void main() {
 
   // @hack use the flat plane fresnel, and bias the mix factor
   // toward the reflection color for artistic effect
-  water_color = mix(refraction_color, reflection_color, pow(1.0 - plane_fresnel, 0.5));
+  water_color = mix(refraction_color, reflection_color, pow(1.0 - fresnel_factor, 0.5));
 
   // @hack Fade to aquamarine at grazing angles
   water_color += vec3(0, 1, 1) * pow(1.0 - plane_fresnel, 8);

@@ -21,6 +21,7 @@ internal void initializeGame(GmContext* context) {
     context->scene.sky.atmosphereColor = Vec3f(1.f);
 
     camera.position.y = LEVEL_1_ALTITUDE;
+    camera.position.z = -250000.f;
     camera.orientation.pitch = Gm_HALF_PI * 0.7f;
     camera.rotation = camera.orientation.toQuaternion();
 
@@ -67,6 +68,11 @@ internal void updateGame(GmContext* context, float dt) {
   }
 
   context->scene.sceneTime += dt;
+
+  // Debug messages
+  #if GAMMA_DEVELOPER_MODE == 1
+    add_debug_message("Position: " + Gm_ToString(camera.position));
+  #endif
 }
 
 int main(int argc, char* argv[]) {
