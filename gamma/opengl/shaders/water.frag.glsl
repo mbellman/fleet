@@ -77,8 +77,6 @@ vec3 getNormal(vec3 world_position) {
   n += createDirectionalWave(wx, wz, vec2(0.2, 1), 1, 0.03, 0.5);
   n += createDirectionalWave(wx, wz, vec2(1, 0.6), 0.7, 0.03, 0.2);
 
-  n += vec2(simplex_noise(vec2(t * 0.03 + wx * 0.0005, t * 0.03 + wz * 0.0005))) * 0.2;
-  n += vec2(simplex_noise(vec2(t * 0.1 - wx * 0.001, t * 0.1 + wz * 0.001))) * 0.3;
   n += vec2(simplex_noise(vec2(t * 0.1 + wx * 0.007, t * 0.1 - wz * 0.007))) * 0.2;
 
   n *= 0.15;

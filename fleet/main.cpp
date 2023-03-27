@@ -32,11 +32,14 @@ internal void initializeGame(GmContext* context) {
   {
     add_mesh("ocean", 1, Mesh::Plane(2));
     add_mesh("ocean-floor", 1, Mesh::Plane(2));
+    add_mesh("main-ship", 1, Mesh::Model("./fleet/assets/main-ship.obj"));
 
     mesh("ocean")->type = MeshType::WATER;
+    mesh("main-ship")->roughness = 0.2f;
 
     auto& ocean = create_object_from("ocean");
     auto& floor = create_object_from("ocean-floor");
+    auto& player = create_object_from("main-ship");
 
     ocean.scale = Vec3f(10000.f, 1.f, 10000.f);
 
@@ -44,8 +47,12 @@ internal void initializeGame(GmContext* context) {
     floor.scale = ocean.scale;
     floor.color = Vec3f(0.1f, 1.f, 1.f);
 
+    player.scale = Vec3f(30.f);
+    player.color = Vec3f(0.8f, 0.9f, 1.f);
+
     commit(ocean);
     commit(floor);
+    commit(player);
   }
 }
 
@@ -65,6 +72,15 @@ internal void updateGame(GmContext* context, float dt) {
 
     commit(ocean);
     commit(floor);
+  }
+
+  // Update ships
+  {
+    auto& player = get_player();
+
+    player.position = camera.position - Vec3f(0, 500.f, 0) + Vec3f(0, 0, 200.f);
+
+    commit(player);
   }
 
   context->scene.sceneTime += dt;
