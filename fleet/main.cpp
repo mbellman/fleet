@@ -8,10 +8,14 @@ using namespace Gamma;
 constexpr static float MAX_DT = 1.f / 30.f;
 constexpr static float LEVEL_1_ALTITUDE = 5000.f;
 constexpr static float MAX_VELOCITY = 400.f;
+constexpr static u16 TOTAL_BULLETS = 100;
 
 struct GameState {
   Vec3f velocity;
   Vec3f offset;
+
+  float lastBulletTime = 0.f;
+  u16 nextBulletIndex = 0;
 };
 
 internal void initializeGame(GmContext* context, GameState& state) {
@@ -31,6 +35,11 @@ internal void initializeGame(GmContext* context, GameState& state) {
     camera.orientation.pitch = Gm_HALF_PI * 0.7f;
     camera.rotation = camera.orientation.toQuaternion();
 
+    auto& light = create_light(LightType::DIRECTIONAL);
+
+    light.color = Vec3f(1.f, 0.9f, 0.8f);
+    light.direction = Vec3f(0, -1.f, 1.f);
+
     Gm_EnableFlags(GammaFlags::VSYNC);
   }
 
@@ -39,6 +48,19 @@ internal void initializeGame(GmContext* context, GameState& state) {
     add_mesh("ocean", 1, Mesh::Plane(2));
     add_mesh("ocean-floor", 1, Mesh::Plane(2));
     add_mesh("main-ship", 1, Mesh::Model("./fleet/assets/main-ship.obj"));
+    add_mesh("bullet", TOTAL_BULLETS, Mesh::Sphere(4));
+    add_mesh("bullet-glow", TOTAL_BULLETS, Mesh::Particles());
+
+    for (u16 i = 0; i < TOTAL_BULLETS; i++) {
+      auto& bullet = create_object_from("bullet");
+      auto& glow = create_object_from("bullet-glow");
+
+      bullet.scale = Vec3f(10.f);
+      bullet.color = Vec3f(1.f, 0.5f, 0.25f);
+
+      glow.scale = bullet.scale * 2.f;
+      glow.color = Vec3f(1.f, 0.8f, 0.5f);
+    }
 
     mesh("ocean")->type = MeshType::WATER;
     mesh("main-ship")->roughness = 0.2f;
@@ -51,10 +73,10 @@ internal void initializeGame(GmContext* context, GameState& state) {
 
     floor.position = ocean.position - Vec3f(0, 500.f, 0);
     floor.scale = ocean.scale;
-    floor.color = Vec3f(0.1f, 1.f, 1.f);
+    floor.color = Vec3f(0.1f, 0.75f, 0.75f);
 
     player.scale = Vec3f(30.f);
-    player.color = Vec3f(0.8f, 0.9f, 1.f);
+    player.color = Vec3f(1.f);
 
     commit(ocean);
     commit(floor);
@@ -65,10 +87,14 @@ internal void initializeGame(GmContext* context, GameState& state) {
 internal void updateGame(GmContext* context, GameState& state, float dt) {
   auto& camera = get_camera();
   auto& input = get_input();
+  const float scrollDistance = 2000.f * dt;
 
-  camera.position.z += 2000.f * dt;
+  // Scroll level
+  {
+    camera.position.z += scrollDistance;
+  }
 
-  // Handle input
+  // Handle directional input
   {
     Vec3f acceleration;
     const float rate = 3000.f;
@@ -100,6 +126,49 @@ internal void updateGame(GmContext* context, GameState& state, float dt) {
     state.velocity *= (1.f - 7.f * dt);
   }
 
+  // Update ships
+  {
+    auto& player = get_player();
+    float roll = -0.25f * (state.velocity.x / MAX_VELOCITY);
+    float pitch = 0.25f * (state.velocity.z / MAX_VELOCITY);
+
+    player.position = camera.position - Vec3f(0, 500.f, 0) + Vec3f(0, 0, 200.f) + state.offset;
+    player.rotation = Quaternion::fromAxisAngle(Vec3f(0, 0, 1), roll) * Quaternion::fromAxisAngle(Vec3f(1, 0, 0), pitch);
+
+    commit(player);
+  }
+
+  // Handle bullets
+  {
+    // Fire bullets
+    if (input.isKeyHeld(Key::SPACE) && time_since(state.lastBulletTime) >= 0.05f) {
+      auto& bullet = objects("bullet")[state.nextBulletIndex];
+      auto& glow = objects("bullet-glow")[state.nextBulletIndex];
+
+      bullet.position = get_player().position;
+      glow.position = bullet.position;
+
+      if (++state.nextBulletIndex == TOTAL_BULLETS) {
+        state.nextBulletIndex = 0;
+      }
+
+      state.lastBulletTime = get_scene_time();
+    }
+
+    // Update bullet/glow position
+    auto& glowObjects = objects("bullet-glow");
+
+    for (auto& bullet : objects("bullet")) {
+      auto& glow = glowObjects[bullet._record.id];
+
+      bullet.position.z += scrollDistance + 1000.f * dt;
+      glow.position.z = bullet.position.z;
+
+      commit(bullet);
+      commit(glow);
+    }
+  }
+
   // Sync ocean plane position to camera
   {
     auto& ocean = objects("ocean")[0];
@@ -111,18 +180,6 @@ internal void updateGame(GmContext* context, GameState& state, float dt) {
 
     commit(ocean);
     commit(floor);
-  }
-
-  // Update ships
-  {
-    auto& player = get_player();
-    float roll = -0.25f * (state.velocity.x / MAX_VELOCITY);
-    float pitch = 0.25f * (state.velocity.z / MAX_VELOCITY);
-
-    player.position = camera.position - Vec3f(0, 500.f, 0) + Vec3f(0, 0, 200.f) + state.offset;
-    player.rotation = Quaternion::fromAxisAngle(Vec3f(0, 0, 1), roll) * Quaternion::fromAxisAngle(Vec3f(1, 0, 0), pitch);
-
-    commit(player);
   }
 
   context->scene.sceneTime += dt;
