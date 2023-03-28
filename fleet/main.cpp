@@ -71,6 +71,14 @@ internal void initializeGame(GmContext* context, GameState& state) {
     light.color = Vec3f(1.f, 0.9f, 0.8f);
     light.direction = Vec3f(0, -1.f, 1.f);
 
+    auto& flash = create_light(LightType::POINT);
+
+    flash.color = Vec3f(1.f);
+    flash.radius = 100.f;
+    flash.power = 0.f;
+
+    save_light("muzzle-flash", &flash);
+
     Gm_EnableFlags(GammaFlags::VSYNC);
   }
 
@@ -225,7 +233,13 @@ internal void updateGame(GmContext* context, GameState& state, float dt) {
         });
       }
 
+      get_light("muzzle-flash").power = 5.f;
+
       state.lastPlayerBulletFireTime = get_scene_time();
+    }
+
+    if (time_since(state.lastPlayerBulletFireTime) > 0.04f) {
+      get_light("muzzle-flash").power = 0.f;
     }
 
     // Update bullet/glow position
@@ -251,6 +265,14 @@ internal void updateGame(GmContext* context, GameState& state, float dt) {
       commit(bullet);
       commit(glow);
     }
+  }
+
+  // Handle lights
+  {
+    auto& player = get_player();
+    auto& flash = get_light("muzzle-flash");
+
+    flash.position = player.position + Vec3f(0, player.scale.y, player.scale.z * 2.f);
   }
 
   // Sync ocean plane position to camera
