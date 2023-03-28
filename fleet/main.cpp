@@ -21,6 +21,18 @@ struct Bullet {
   float scale = 0.f;
 };
 
+struct Enemy {
+  u16 index = 0;
+  Vec3f velocity = Vec3f(0.f);
+  float health = 100.f;
+};
+
+struct SpiralShip : Enemy {};
+
+enum EnemyType {
+  SPIRAL_SHIP
+};
+
 struct GameState {
   Vec3f velocity;
   Vec3f offset;
@@ -31,6 +43,8 @@ struct GameState {
   float lastPlayerBulletFireTime = 0.f;
   u16 nextPlayerBulletIndex = 0;
   u16 nextEnemyBulletIndex = 0;
+
+  std::vector<SpiralShip> spiralShips;
 };
 
 internal void spawnPlayerBullet(GmContext* context, GameState& state, const Bullet& bullet) {
@@ -49,11 +63,57 @@ internal void spawnEnemyBullet(GmContext* context, GameState& state, const Bulle
   }
 }
 
+internal void spawnEnemy(GmContext* context, GameState& state, EnemyType type, const Vec3f offset) {
+  auto& player = get_player();
+
+  switch (type) {
+    case SPIRAL_SHIP:
+      if (objects("spiral-ship").totalActive() == 10) {
+        return;
+      }
+
+      auto& ship = create_object_from("spiral-ship");
+
+      ship.position = player.position + offset;
+      ship.scale = Vec3f(20.f);
+
+      state.spiralShips.push_back({
+        ship._record.id,
+        Vec3f(0, 0, -100.f),
+        150.f
+      });
+
+      break;
+  }
+}
+
+internal void updateSpiralShips(GmContext* context, GameState& state, float dt) {
+  const float scrollDistance = 2000.f * dt;
+  auto& spiralShipObjects = objects("spiral-ship");
+  float t = get_scene_time();
+
+  for (auto& ship : state.spiralShips) {
+    ship.velocity.x = sinf(t * 2.f) * 50.f;
+
+    auto& object = spiralShipObjects[ship.index];
+
+    object.position += ship.velocity * dt;
+    object.position.z += scrollDistance;
+    object.rotation = Quaternion::fromAxisAngle(Vec3f(0, 1, 0), t);
+
+    commit(object);
+  }
+}
+
+internal void updateEnemyShips(GmContext* context, GameState& state, float dt) {
+  updateSpiralShips(context, state, dt);
+}
+
 internal void initializeGame(GmContext* context, GameState& state) {
+  auto& camera = get_camera();
+
   // Engine/scene configuration
   {
-    auto& camera = get_camera();
-
     context->scene.zNear = 1.f;
     context->scene.zFar = 10000.f;
 
@@ -115,6 +175,7 @@ internal void initializeGame(GmContext* context, GameState& state) {
     floor.scale = ocean.scale;
     floor.color = Vec3f(0.1f, 0.75f, 0.75f);
 
+    player.position = camera.position - Vec3f(0, 500.f, 0) + Vec3f(0, 0, 200.f) + state.offset;
     player.scale = Vec3f(30.f);
     player.color = Vec3f(1.f);
 
@@ -125,9 +186,15 @@ internal void initializeGame(GmContext* context, GameState& state) {
 
   // Entity initialization
   {
+    add_mesh("spiral-ship", 10, Mesh::Cube());
+
     state.playerBullets.reserve(TOTAL_PLAYER_BULLETS);
     state.enemyBullets.reserve(TOTAL_ENEMY_BULLETS);
   }
+
+  // @temporary
+  spawnEnemy(context, state, SPIRAL_SHIP, Vec3f(-200.f, 0, 500.f));
+  spawnEnemy(context, state, SPIRAL_SHIP, Vec3f(200.f, 0, 500.f));
 }
 
 internal void updateGame(GmContext* context, GameState& state, float dt) {
@@ -171,7 +238,7 @@ internal void updateGame(GmContext* context, GameState& state, float dt) {
     state.velocity *= (1.f - 7.f * dt);
   }
 
-  // Update ships
+  // Update player ships
   {
     auto& player = get_player();
     float roll = -0.25f * (state.velocity.x / MAX_VELOCITY);
@@ -181,6 +248,11 @@ internal void updateGame(GmContext* context, GameState& state, float dt) {
     player.rotation = Quaternion::fromAxisAngle(Vec3f(0, 0, 1), roll) * Quaternion::fromAxisAngle(Vec3f(1, 0, 0), pitch);
 
     commit(player);
+  }
+
+  // Update enemy ships
+  {
+    updateEnemyShips(context, state, dt);
   }
 
   // Handle player bullets
@@ -238,28 +310,24 @@ internal void updateGame(GmContext* context, GameState& state, float dt) {
       state.lastPlayerBulletFireTime = get_scene_time();
     }
 
-    if (time_since(state.lastPlayerBulletFireTime) > 0.04f) {
-      get_light("muzzle-flash").power = 0.f;
-    }
-
     // Update bullet/glow position
     auto& bullets = objects("bullet");
     auto& glows = objects("bullet-glow");
-    Vec3f scrollOffset = Vec3f(0, 0, scrollDistance);
 
     for (u16 i = 0; i < TOTAL_PLAYER_BULLETS; i++) {
       auto& playerBullet = state.playerBullets[i];
       auto& bullet = bullets[i];
       auto& glow = glows[i];
 
-      playerBullet.position += scrollOffset + playerBullet.velocity * dt;
+      playerBullet.position += playerBullet.velocity * dt;
+      playerBullet.position.z += scrollDistance;
 
       bullet.position = glow.position = playerBullet.position;
       bullet.color = playerBullet.color;
       bullet.scale = Vec3f(playerBullet.scale);
 
       glow.position = bullet.position;
-      glow.color = Vec3f(playerBullet.color) * 2.f;
+      glow.color = Vec3f(playerBullet.color);
       glow.scale = Vec3f(playerBullet.scale * 2.f);
 
       commit(bullet);
@@ -273,6 +341,10 @@ internal void updateGame(GmContext* context, GameState& state, float dt) {
     auto& flash = get_light("muzzle-flash");
 
     flash.position = player.position + Vec3f(0, player.scale.y, player.scale.z * 2.f);
+
+    if (time_since(state.lastPlayerBulletFireTime) > 0.04f) {
+      flash.power = 0.f;
+    }
   }
 
   // Sync ocean plane position to camera
