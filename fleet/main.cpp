@@ -9,7 +9,8 @@ using namespace Gamma;
 // @todo move to game constants
 constexpr static float MAX_DT = 1.f / 30.f;
 constexpr static float LEVEL_1_ALTITUDE = 5000.f;
-constexpr static float MAX_VELOCITY = 400.f;
+constexpr static float PLAYER_ACCELERATION_RATE = 5000.f;
+constexpr static float MAX_VELOCITY = 500.f;
 constexpr static u16 TOTAL_PLAYER_BULLETS = 100;
 constexpr static u16 TOTAL_ENEMY_BULLETS = 500;
 
@@ -24,6 +25,7 @@ struct GameState {
   Vec3f velocity;
   Vec3f offset;
 
+  u8 bulletTier = 2;
   std::vector<Bullet> playerBullets;
   std::vector<Bullet> enemyBullets;
   float lastPlayerBulletFireTime = 0.f;
@@ -133,22 +135,21 @@ internal void updateGame(GmContext* context, GameState& state, float dt) {
   // Handle directional input
   {
     Vec3f acceleration;
-    const float rate = 3000.f;
 
     if (input.isKeyHeld(Key::ARROW_UP)) {
-      acceleration.z += rate * dt;
+      acceleration.z += PLAYER_ACCELERATION_RATE * dt;
     }
 
     if (input.isKeyHeld(Key::ARROW_DOWN)) {
-      acceleration.z -= rate * dt;
+      acceleration.z -= PLAYER_ACCELERATION_RATE * dt;
     }
 
     if (input.isKeyHeld(Key::ARROW_LEFT)) {
-      acceleration.x -= rate * dt;
+      acceleration.x -= PLAYER_ACCELERATION_RATE * dt;
     }
 
     if (input.isKeyHeld(Key::ARROW_RIGHT)) {
-      acceleration.x += rate * dt;
+      acceleration.x += PLAYER_ACCELERATION_RATE * dt;
     }
 
     state.velocity += acceleration;
@@ -174,18 +175,55 @@ internal void updateGame(GmContext* context, GameState& state, float dt) {
     commit(player);
   }
 
-  // Handle bullets
+  // Handle player bullets
   {
     if (
       input.isKeyHeld(Key::SPACE) &&
       time_since(state.lastPlayerBulletFireTime) >= 0.05f
     ) {
+      auto& player = get_player();
+
+      // Primary bullet
       spawnPlayerBullet(context, state, {
         .velocity = Vec3f(0, 0, 1000.f),
-        .position = get_player().position,
+        .position = player.position,
         .color = Vec3f(1.f, 0.5f, 0.25f),
         .scale = 10.f
       });
+
+      // Tier-1 bullets
+      if (state.bulletTier >= 1) {
+        spawnPlayerBullet(context, state, {
+          .velocity = Vec3f(-200.f, 0, 900.f),
+          .position = player.position,
+          .color = Vec3f(1.f, 0.25f, 0.1f),
+          .scale = 10.f
+        });
+
+        spawnPlayerBullet(context, state, {
+          .velocity = Vec3f(200.f, 0, 900.f),
+          .position = player.position,
+          .color = Vec3f(1.f, 0.25f, 0.1f),
+          .scale = 10.f
+        });
+      }
+
+      // Tier-2 bullets
+      if (state.bulletTier >= 2) {
+        spawnPlayerBullet(context, state, {
+          .velocity = Vec3f(0, 0, 1000.f),
+          .position = player.position - Vec3f(30.f, 0, 0),
+          .color = Vec3f(0.2f, 0.4f, 1.f),
+          .scale = 6.f
+        });
+
+        spawnPlayerBullet(context, state, {
+          .velocity = Vec3f(0, 0, 1000.f),
+          .position = player.position + Vec3f(30.f, 0, 0),
+          .color = Vec3f(0.2f, 0.4f, 1.f),
+          .scale = 6.f
+        });
+      }
 
       state.lastPlayerBulletFireTime = get_scene_time();
     }
