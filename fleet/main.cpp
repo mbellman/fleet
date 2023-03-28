@@ -1,3 +1,5 @@
+#include <vector>
+
 #include "Gamma.h"
 
 #include "fleet_macros.h"
@@ -8,15 +10,42 @@ using namespace Gamma;
 constexpr static float MAX_DT = 1.f / 30.f;
 constexpr static float LEVEL_1_ALTITUDE = 5000.f;
 constexpr static float MAX_VELOCITY = 400.f;
-constexpr static u16 TOTAL_BULLETS = 100;
+constexpr static u16 TOTAL_PLAYER_BULLETS = 100;
+constexpr static u16 TOTAL_ENEMY_BULLETS = 500;
+
+struct Bullet {
+  Vec3f velocity = Vec3f(0.f);
+  Vec3f position = Vec3f(0.f);
+  Vec3f color = Vec3f(0.f);
+  float scale = 0.f;
+};
 
 struct GameState {
   Vec3f velocity;
   Vec3f offset;
 
-  float lastBulletTime = 0.f;
-  u16 nextBulletIndex = 0;
+  std::vector<Bullet> playerBullets;
+  std::vector<Bullet> enemyBullets;
+  float lastPlayerBulletFireTime = 0.f;
+  u16 nextPlayerBulletIndex = 0;
+  u16 nextEnemyBulletIndex = 0;
 };
+
+internal void spawnPlayerBullet(GmContext* context, GameState& state, const Bullet& bullet) {
+  state.playerBullets[state.nextPlayerBulletIndex] = bullet;
+
+  if (++state.nextPlayerBulletIndex >= TOTAL_PLAYER_BULLETS) {
+    state.nextPlayerBulletIndex = 0;
+  }
+}
+
+internal void spawnEnemyBullet(GmContext* context, GameState& state, const Bullet& bullet) {
+  state.enemyBullets[state.nextEnemyBulletIndex] = bullet;
+
+  if (++state.nextEnemyBulletIndex >= TOTAL_ENEMY_BULLETS) {
+    state.nextEnemyBulletIndex = 0;
+  }
+}
 
 internal void initializeGame(GmContext* context, GameState& state) {
   // Engine/scene configuration
@@ -48,10 +77,14 @@ internal void initializeGame(GmContext* context, GameState& state) {
     add_mesh("ocean", 1, Mesh::Plane(2));
     add_mesh("ocean-floor", 1, Mesh::Plane(2));
     add_mesh("main-ship", 1, Mesh::Model("./fleet/assets/main-ship.obj"));
-    add_mesh("bullet", TOTAL_BULLETS, Mesh::Sphere(4));
-    add_mesh("bullet-glow", TOTAL_BULLETS, Mesh::Particles());
+    add_mesh("bullet", TOTAL_PLAYER_BULLETS, Mesh::Sphere(6));
+    add_mesh("bullet-glow", TOTAL_PLAYER_BULLETS, Mesh::Particles());
 
-    for (u16 i = 0; i < TOTAL_BULLETS; i++) {
+    mesh("ocean")->type = MeshType::WATER;
+    mesh("main-ship")->roughness = 0.1f;
+    mesh("bullet")->emissivity = 0.5f;
+
+    for (u16 i = 0; i < TOTAL_PLAYER_BULLETS; i++) {
       auto& bullet = create_object_from("bullet");
       auto& glow = create_object_from("bullet-glow");
 
@@ -61,9 +94,6 @@ internal void initializeGame(GmContext* context, GameState& state) {
       glow.scale = bullet.scale * 2.f;
       glow.color = Vec3f(1.f, 0.8f, 0.5f);
     }
-
-    mesh("ocean")->type = MeshType::WATER;
-    mesh("main-ship")->roughness = 0.2f;
 
     auto& ocean = create_object_from("ocean");
     auto& floor = create_object_from("ocean-floor");
@@ -81,6 +111,12 @@ internal void initializeGame(GmContext* context, GameState& state) {
     commit(ocean);
     commit(floor);
     commit(player);
+  }
+
+  // Entity initialization
+  {
+    state.playerBullets.reserve(TOTAL_PLAYER_BULLETS);
+    state.enemyBullets.reserve(TOTAL_ENEMY_BULLETS);
   }
 }
 
@@ -140,29 +176,39 @@ internal void updateGame(GmContext* context, GameState& state, float dt) {
 
   // Handle bullets
   {
-    // Fire bullets
-    if (input.isKeyHeld(Key::SPACE) && time_since(state.lastBulletTime) >= 0.05f) {
-      auto& bullet = objects("bullet")[state.nextBulletIndex];
-      auto& glow = objects("bullet-glow")[state.nextBulletIndex];
+    if (
+      input.isKeyHeld(Key::SPACE) &&
+      time_since(state.lastPlayerBulletFireTime) >= 0.05f
+    ) {
+      spawnPlayerBullet(context, state, {
+        .velocity = Vec3f(0, 0, 1000.f),
+        .position = get_player().position,
+        .color = Vec3f(1.f, 0.5f, 0.25f),
+        .scale = 10.f
+      });
 
-      bullet.position = get_player().position;
-      glow.position = bullet.position;
-
-      if (++state.nextBulletIndex == TOTAL_BULLETS) {
-        state.nextBulletIndex = 0;
-      }
-
-      state.lastBulletTime = get_scene_time();
+      state.lastPlayerBulletFireTime = get_scene_time();
     }
 
     // Update bullet/glow position
-    auto& glowObjects = objects("bullet-glow");
+    auto& bullets = objects("bullet");
+    auto& glows = objects("bullet-glow");
+    Vec3f scrollOffset = Vec3f(0, 0, scrollDistance);
 
-    for (auto& bullet : objects("bullet")) {
-      auto& glow = glowObjects[bullet._record.id];
+    for (u16 i = 0; i < TOTAL_PLAYER_BULLETS; i++) {
+      auto& playerBullet = state.playerBullets[i];
+      auto& bullet = bullets[i];
+      auto& glow = glows[i];
 
-      bullet.position.z += scrollDistance + 1000.f * dt;
-      glow.position.z = bullet.position.z;
+      playerBullet.position += scrollOffset + playerBullet.velocity * dt;
+
+      bullet.position = glow.position = playerBullet.position;
+      bullet.color = playerBullet.color;
+      bullet.scale = Vec3f(playerBullet.scale);
+
+      glow.position = bullet.position;
+      glow.color = Vec3f(playerBullet.color) * 2.f;
+      glow.scale = Vec3f(playerBullet.scale * 2.f);
 
       commit(bullet);
       commit(glow);
@@ -223,6 +269,10 @@ int main(int argc, char* argv[]) {
       fullscreen = !fullscreen;
 
       Gm_SetFullScreen(context, fullscreen);
+    }
+
+    if (key == Key::T) {
+      Gm_ToggleFlag(GammaFlags::ENABLE_DEV_TOOLS);
     }
   });
 
