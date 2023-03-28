@@ -24,6 +24,7 @@ struct Bullet {
 struct Enemy {
   u16 index = 0;
   Vec3f velocity = Vec3f(0.f);
+  float lastBulletFireTime = 0.f;
   float health = 100.f;
 };
 
@@ -80,6 +81,7 @@ internal void spawnEnemy(GmContext* context, GameState& state, EnemyType type, c
       state.spiralShips.push_back({
         ship._record.id,
         Vec3f(0, 0, -100.f),
+        0.f,
         150.f
       });
 
@@ -93,7 +95,7 @@ internal void updateSpiralShips(GmContext* context, GameState& state, float dt) 
   float t = get_scene_time();
 
   for (auto& ship : state.spiralShips) {
-    ship.velocity.x = sinf(t * 2.f) * 50.f;
+    // ship.velocity.x = sinf(t * 2.f) * 50.f;
 
     auto& object = spiralShipObjects[ship.index];
 
@@ -102,6 +104,26 @@ internal void updateSpiralShips(GmContext* context, GameState& state, float dt) 
     object.rotation = Quaternion::fromAxisAngle(Vec3f(0, 1, 0), t);
 
     commit(object);
+
+    if (time_since(ship.lastBulletFireTime) > 0.5f) {
+      Vec3f left = object.rotation.getLeftDirection();
+
+      spawnEnemyBullet(context, state, {
+        .velocity = left * 100.f + ship.velocity,
+        .position = object.position + left * 20.f,
+        .color = Vec3f(1.f, 0, 0),
+        .scale = 10.f
+      });
+
+      spawnEnemyBullet(context, state, {
+        .velocity = left.invert() * 100.f + ship.velocity,
+        .position = object.position + left.invert() * 20.f,
+        .color = Vec3f(1.f, 0, 0),
+        .scale = 10.f
+      });
+
+      ship.lastBulletFireTime = get_scene_time();
+    }
   }
 }
 
@@ -149,20 +171,28 @@ internal void initializeGame(GmContext* context, GameState& state) {
     add_mesh("main-ship", 1, Mesh::Model("./fleet/assets/main-ship.obj"));
     add_mesh("bullet", TOTAL_PLAYER_BULLETS, Mesh::Sphere(6));
     add_mesh("bullet-glow", TOTAL_PLAYER_BULLETS, Mesh::Particles());
+    add_mesh("enemy-bullet", TOTAL_ENEMY_BULLETS, Mesh::Sphere(6));
+    add_mesh("enemy-bullet-glow", TOTAL_ENEMY_BULLETS, Mesh::Particles());
 
     mesh("ocean")->type = MeshType::WATER;
     mesh("main-ship")->roughness = 0.1f;
     mesh("bullet")->emissivity = 0.5f;
+    mesh("enemy-bullet")->emissivity = 0.5f;
 
     for (u16 i = 0; i < TOTAL_PLAYER_BULLETS; i++) {
       auto& bullet = create_object_from("bullet");
       auto& glow = create_object_from("bullet-glow");
 
-      bullet.scale = Vec3f(10.f);
-      bullet.color = Vec3f(1.f, 0.5f, 0.25f);
+      bullet.scale = Vec3f(0.f);
+      glow.scale = Vec3f(0.f);
+    }
 
-      glow.scale = bullet.scale * 2.f;
-      glow.color = Vec3f(1.f, 0.8f, 0.5f);
+    for (u16 i = 0; i < TOTAL_ENEMY_BULLETS; i++) {
+      auto& bullet = create_object_from("enemy-bullet");
+      auto& glow = create_object_from("enemy-bullet-glow");
+
+      bullet.scale = Vec3f(0.f);
+      glow.scale = Vec3f(0.);
     }
 
     auto& ocean = create_object_from("ocean");
@@ -255,7 +285,7 @@ internal void updateGame(GmContext* context, GameState& state, float dt) {
     updateEnemyShips(context, state, dt);
   }
 
-  // Handle player bullets
+  // Update player bullets
   {
     if (
       input.isKeyHeld(Key::SPACE) &&
@@ -329,6 +359,32 @@ internal void updateGame(GmContext* context, GameState& state, float dt) {
       glow.position = bullet.position;
       glow.color = Vec3f(playerBullet.color);
       glow.scale = Vec3f(playerBullet.scale * 2.f);
+
+      commit(bullet);
+      commit(glow);
+    }
+  }
+
+  // Update enemy bullets
+  {
+    auto& bullets = objects("enemy-bullet");
+    auto& glows = objects("enemy-bullet-glow");
+
+    for (u16 i = 0; i < TOTAL_ENEMY_BULLETS; i++) {
+      auto& enemyBullet = state.enemyBullets[i];
+      auto& bullet = bullets[i];
+      auto& glow = glows[i];
+
+      enemyBullet.position += enemyBullet.velocity * dt;
+      enemyBullet.position.z += scrollDistance;
+
+      bullet.position = glow.position = enemyBullet.position;
+      bullet.color = enemyBullet.color;
+      bullet.scale = Vec3f(enemyBullet.scale);
+
+      glow.position = bullet.position;
+      glow.color = Vec3f(enemyBullet.color);
+      glow.scale = Vec3f(enemyBullet.scale * 2.f);
 
       commit(bullet);
       commit(glow);
