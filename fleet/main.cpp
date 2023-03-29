@@ -99,11 +99,8 @@ internal Vec3f calculateGameFieldCenter(const Vec3f& cameraPosition) {
 }
 
 // @todo consider different level view orientations
-internal bool isOutOfView(const Vec3f& gameFieldCenter, const Vec3f& position) {
-  return (
-    Gm_Absf(position.x - gameFieldCenter.x) > 500.f ||
-    Gm_Absf(position.z - gameFieldCenter.z) > 500.f
-  );
+internal bool isBehindGameField(const Vec3f& gameFieldCenter, const Vec3f& position) {
+  return gameFieldCenter.z - position.z > 500.f;
 }
 
 internal void spawnPlayerBullet(GmContext* context, GameState& state, const Bullet& bullet) {
@@ -131,13 +128,11 @@ internal Object& requestEnemyObject(GmContext* context, const std::string& objec
 }
 
 internal void spawnEnemy(GmContext* context, GameState& state, EnemyType type, const Vec3f offset) {
-  auto& player = get_player();
-
   switch (type) {
     case SPIRAL_SHIP:
       auto& ship = requestEnemyObject(context, "spiral-ship", state.spiralShips.size());
 
-      ship.position = player.position + offset;
+      ship.position = state.gameFieldCenter + offset;
       ship.scale = Vec3f(20.f);
 
       state.spiralShips.push_back({
@@ -166,7 +161,7 @@ internal void updateSpiralShips(GmContext* context, GameState& state, float dt) 
     object.position += entity.velocity * dt;
     object.position.z += scrollDistance;
 
-    if (isOutOfView(state.gameFieldCenter, object.position)) {
+    if (isBehindGameField(state.gameFieldCenter, object.position)) {
       Gm_VectorRemove(state.spiralShips, entity);
 
       continue;
