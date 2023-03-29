@@ -26,6 +26,10 @@ struct Enemy {
   Vec3f velocity = Vec3f(0.f);
   float lastBulletFireTime = 0.f;
   float health = 100.f;
+
+  bool operator==(const Enemy& enemy) {
+    return index == enemy.index;
+  }
 };
 
 struct SpiralShip : Enemy {};
@@ -35,6 +39,8 @@ enum EnemyType {
 };
 
 struct GameState {
+  Vec3f gameFieldCenter;
+
   Vec3f velocity;
   Vec3f offset;
 
@@ -47,6 +53,18 @@ struct GameState {
 
   std::vector<SpiralShip> spiralShips;
 };
+
+internal Vec3f calculateGameFieldCenter(const Vec3f& cameraPosition) {
+  return cameraPosition - Vec3f(0, 500.f, 0) + Vec3f(0, 0, 200.f);
+}
+
+// @todo consider different level view orientations
+internal bool isOutOfView(const Vec3f& gameFieldCenter, const Vec3f& position) {
+  return (
+    Gm_Absf(position.x - gameFieldCenter.x) > 500.f ||
+    Gm_Absf(position.z - gameFieldCenter.z) > 500.f
+  );
+}
 
 internal void spawnPlayerBullet(GmContext* context, GameState& state, const Bullet& bullet) {
   state.playerBullets[state.nextPlayerBulletIndex] = bullet;
@@ -64,16 +82,20 @@ internal void spawnEnemyBullet(GmContext* context, GameState& state, const Bulle
   }
 }
 
+internal Object& requestEnemyObject(GmContext* context, const std::string& objectName, u32 totalActiveEntities) {
+  if (objects(objectName).totalActive() > totalActiveEntities) {
+    return objects(objectName)[totalActiveEntities];
+  } else {
+    return create_object_from(objectName);
+  }
+}
+
 internal void spawnEnemy(GmContext* context, GameState& state, EnemyType type, const Vec3f offset) {
   auto& player = get_player();
 
   switch (type) {
     case SPIRAL_SHIP:
-      if (objects("spiral-ship").totalActive() == 10) {
-        return;
-      }
-
-      auto& ship = create_object_from("spiral-ship");
+      auto& ship = requestEnemyObject(context, "spiral-ship", state.spiralShips.size());
 
       ship.position = player.position + offset;
       ship.scale = Vec3f(20.f);
@@ -93,37 +115,48 @@ internal void updateSpiralShips(GmContext* context, GameState& state, float dt) 
   const float scrollDistance = 2000.f * dt;
   auto& spiralShipObjects = objects("spiral-ship");
   float t = get_scene_time();
+  u32 index = 0;
 
-  for (auto& ship : state.spiralShips) {
-    // ship.velocity.x = sinf(t * 2.f) * 50.f;
+  while (index < state.spiralShips.size()) {
+    auto& entity = state.spiralShips[index];
+    auto& object = spiralShipObjects[entity.index];
 
-    auto& object = spiralShipObjects[ship.index];
+    entity.velocity.x = sinf(t * 2.f) * 50.f;
 
-    object.position += ship.velocity * dt;
+    object.position += entity.velocity * dt;
     object.position.z += scrollDistance;
+
+    if (isOutOfView(state.gameFieldCenter, object.position)) {
+      Gm_VectorRemove(state.spiralShips, entity);
+
+      continue;
+    }
+
     object.rotation = Quaternion::fromAxisAngle(Vec3f(0, 1, 0), t);
 
     commit(object);
 
-    if (time_since(ship.lastBulletFireTime) > 0.5f) {
+    if (time_since(entity.lastBulletFireTime) > 0.5f) {
       Vec3f left = object.rotation.getLeftDirection();
 
       spawnEnemyBullet(context, state, {
-        .velocity = left * 100.f + ship.velocity,
+        .velocity = left * 100.f + entity.velocity,
         .position = object.position + left * 20.f,
         .color = Vec3f(1.f, 0, 0),
         .scale = 10.f
       });
 
       spawnEnemyBullet(context, state, {
-        .velocity = left.invert() * 100.f + ship.velocity,
+        .velocity = left.invert() * 100.f + entity.velocity,
         .position = object.position + left.invert() * 20.f,
         .color = Vec3f(1.f, 0, 0),
         .scale = 10.f
       });
 
-      ship.lastBulletFireTime = get_scene_time();
+      entity.lastBulletFireTime = get_scene_time();
     }
+
+    index++;
   }
 }
 
@@ -176,8 +209,8 @@ internal void initializeGame(GmContext* context, GameState& state) {
 
     mesh("ocean")->type = MeshType::WATER;
     mesh("main-ship")->roughness = 0.1f;
-    mesh("bullet")->emissivity = 0.5f;
-    mesh("enemy-bullet")->emissivity = 0.5f;
+    // mesh("bullet")->emissivity = 0.5f;
+    // mesh("enemy-bullet")->emissivity = 0.5f;
 
     for (u16 i = 0; i < TOTAL_PLAYER_BULLETS; i++) {
       auto& bullet = create_object_from("bullet");
@@ -235,6 +268,8 @@ internal void updateGame(GmContext* context, GameState& state, float dt) {
   // Scroll level
   {
     camera.position.z += scrollDistance;
+
+    state.gameFieldCenter = calculateGameFieldCenter(camera.position);
   }
 
   // Handle directional input
