@@ -342,19 +342,40 @@ internal void updateGame(GmContext* context, GameState& state, float dt) {
     }
 
     float verticalAlpha = (state.offset.z - state.bounds.bottom.z) / (state.bounds.top.z - state.bounds.bottom.z);
-    float horizontalLimit = Gm_Lerpf(state.bounds.bottom.x, state.bounds.top.x, verticalAlpha);
-
     float verticalLimitFactor = 2.f * Gm_Absf(verticalAlpha - 0.5f);
     if (verticalLimitFactor > 1.f) verticalLimitFactor = 1.f;
     verticalLimitFactor = 1.f - powf(verticalLimitFactor, 10.f);
 
-    // @todo limit to horizontal bounds
     if (
       (acceleration.z < 0.f && state.offset.z < 0.f) ||
       (acceleration.z > 0.f && state.offset.z > 0.f)
     ) {
       acceleration.z *= verticalLimitFactor;
       state.velocity.z *= verticalLimitFactor;
+    }
+
+    float horizontalLimit = Gm_Lerpf(state.bounds.bottom.x, state.bounds.top.x, verticalAlpha);
+    float horizontalAlpha = 1.f - (-1.f * (state.offset.x - horizontalLimit) / (horizontalLimit * 2.f));
+    float horizontalLimitFactor = 2.f * Gm_Absf(horizontalAlpha - 0.5f);
+    if (horizontalLimitFactor > 1.f) horizontalLimitFactor = 1.f;
+    horizontalLimitFactor = 1.f - powf(horizontalLimitFactor, 10.f);
+
+    if (
+      (acceleration.x < 0.f && state.offset.x < 0.f) ||
+      (acceleration.x > 0.f && state.offset.x > 0.f)
+    ) {
+      acceleration.x *= horizontalLimitFactor;
+      state.velocity.x *= horizontalLimitFactor;
+    }
+
+    if (state.offset.x < -horizontalLimit) {
+      float delta = -horizontalLimit - state.offset.x;
+
+      acceleration.x += 50.f * delta * dt;
+    } else if (state.offset.x > horizontalLimit) {
+      float delta = state.offset.x - horizontalLimit;
+
+      acceleration.x -= 50.f * delta * dt;
     }
 
     state.velocity += acceleration;
