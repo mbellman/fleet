@@ -14,6 +14,11 @@ constexpr static float MAX_VELOCITY = 500.f;
 constexpr static u16 TOTAL_PLAYER_BULLETS = 100;
 constexpr static u16 TOTAL_ENEMY_BULLETS = 500;
 
+struct Bounds {
+  Vec3f top;
+  Vec3f bottom;
+};
+
 struct Bullet {
   Vec3f velocity = Vec3f(0.f);
   Vec3f position = Vec3f(0.f);
@@ -73,6 +78,7 @@ struct GameState {
 
   Vec3f velocity;
   Vec3f offset;
+  Bounds bounds;
 
   float levelStartTime = 0.f;
 
@@ -215,6 +221,10 @@ internal void initializeGame(GmContext* context, GameState& state) {
     camera.orientation.pitch = Gm_HALF_PI * 0.7f;
     camera.rotation = camera.orientation.toQuaternion();
 
+    // @todo calculate this dynamically
+    state.bounds.top = Vec3f(450.f, 0, 350.f);
+    state.bounds.bottom = Vec3f(300.f, 0, -120.f);
+
     auto& light = create_light(LightType::DIRECTIONAL);
 
     light.color = Vec3f(1.f, 0.9f, 0.8f);
@@ -329,6 +339,22 @@ internal void updateGame(GmContext* context, GameState& state, float dt) {
 
     if (input.isKeyHeld(Key::ARROW_RIGHT)) {
       acceleration.x += PLAYER_ACCELERATION_RATE * dt;
+    }
+
+    float verticalAlpha = (state.offset.z - state.bounds.bottom.z) / (state.bounds.top.z - state.bounds.bottom.z);
+    float horizontalLimit = Gm_Lerpf(state.bounds.bottom.x, state.bounds.top.x, verticalAlpha);
+
+    float verticalLimitFactor = 2.f * Gm_Absf(verticalAlpha - 0.5f);
+    if (verticalLimitFactor > 1.f) verticalLimitFactor = 1.f;
+    verticalLimitFactor = 1.f - powf(verticalLimitFactor, 10.f);
+
+    // @todo limit to horizontal bounds
+    if (
+      (acceleration.z < 0.f && state.offset.z < 0.f) ||
+      (acceleration.z > 0.f && state.offset.z > 0.f)
+    ) {
+      acceleration.z *= verticalLimitFactor;
+      state.velocity.z *= verticalLimitFactor;
     }
 
     state.velocity += acceleration;
