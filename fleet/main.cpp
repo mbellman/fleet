@@ -38,11 +38,43 @@ enum EnemyType {
   SPIRAL_SHIP
 };
 
+struct EnemySpawn {
+  float time;
+  Vec3f offset;
+  EnemyType type;
+};
+
+static std::vector<EnemySpawn> LEVEL_1_ENEMY_SPAWNS = {
+  {
+    .time = 0.f,
+    .offset = Vec3f(-200.f, 0, 500.f),
+    .type = SPIRAL_SHIP
+  },
+  {
+    .time = 0.f,
+    .offset = Vec3f(200.f, 0, 500.f),
+    .type = SPIRAL_SHIP
+  },
+
+  {
+    .time = 5.f,
+    .offset = Vec3f(-200.f, 0, 500.f),
+    .type = SPIRAL_SHIP
+  },
+  {
+    .time = 5.f,
+    .offset = Vec3f(200.f, 0, 500.f),
+    .type = SPIRAL_SHIP
+  }
+};
+
 struct GameState {
   Vec3f gameFieldCenter;
 
   Vec3f velocity;
   Vec3f offset;
+
+  float levelStartTime = 0.f;
 
   u8 bulletTier = 2;
   std::vector<Bullet> playerBullets;
@@ -50,6 +82,8 @@ struct GameState {
   float lastPlayerBulletFireTime = 0.f;
   u16 nextPlayerBulletIndex = 0;
   u16 nextEnemyBulletIndex = 0;
+
+  std::vector<EnemySpawn> remainingEnemySpawns;
 
   std::vector<SpiralShip> spiralShips;
 };
@@ -140,14 +174,14 @@ internal void updateSpiralShips(GmContext* context, GameState& state, float dt) 
       Vec3f left = object.rotation.getLeftDirection();
 
       spawnEnemyBullet(context, state, {
-        .velocity = left * 100.f + entity.velocity,
+        .velocity = left * 150.f + entity.velocity,
         .position = object.position + left * 20.f,
         .color = Vec3f(1.f, 0, 0),
         .scale = 10.f
       });
 
       spawnEnemyBullet(context, state, {
-        .velocity = left.invert() * 100.f + entity.velocity,
+        .velocity = left.invert() * 150.f + entity.velocity,
         .position = object.position + left.invert() * 20.f,
         .color = Vec3f(1.f, 0, 0),
         .scale = 10.f
@@ -255,9 +289,14 @@ internal void initializeGame(GmContext* context, GameState& state) {
     state.enemyBullets.reserve(TOTAL_ENEMY_BULLETS);
   }
 
+  state.levelStartTime = get_scene_time();
+
   // @temporary
-  spawnEnemy(context, state, SPIRAL_SHIP, Vec3f(-200.f, 0, 500.f));
-  spawnEnemy(context, state, SPIRAL_SHIP, Vec3f(200.f, 0, 500.f));
+  for (s32 i = LEVEL_1_ENEMY_SPAWNS.size() - 1; i >= 0; i--) {
+    auto& spawn = LEVEL_1_ENEMY_SPAWNS[i];
+
+    state.remainingEnemySpawns.push_back(spawn);
+  }
 }
 
 internal void updateGame(GmContext* context, GameState& state, float dt) {
@@ -318,6 +357,27 @@ internal void updateGame(GmContext* context, GameState& state, float dt) {
   // Update enemy ships
   {
     updateEnemyShips(context, state, dt);
+  }
+
+  // Spawn enemies
+  {
+    float runningTime = time_since(state.levelStartTime);
+
+    while (1) {
+      if (state.remainingEnemySpawns.size() == 0) {
+        break;
+      }
+
+      auto& nextSpawn = state.remainingEnemySpawns.back();
+
+      if (runningTime >= nextSpawn.time) {
+        spawnEnemy(context, state, nextSpawn.type, nextSpawn.offset);
+
+        state.remainingEnemySpawns.pop_back();
+      } else {
+        break;
+      }
+    }
   }
 
   // Update player bullets
