@@ -99,8 +99,8 @@ internal Vec3f calculateGameFieldCenter(const Vec3f& cameraPosition) {
 }
 
 // @todo consider different level view orientations
-internal bool isBehindGameField(const Vec3f& gameFieldCenter, const Vec3f& position) {
-  return gameFieldCenter.z - position.z > 500.f;
+internal bool isScrolledOutOfBounds(const GameState& state, const Vec3f& position) {
+  return position.z < (state.gameFieldCenter.z + state.bounds.bottom.z);
 }
 
 internal void spawnPlayerBullet(GmContext* context, GameState& state, const Bullet& bullet) {
@@ -161,7 +161,7 @@ internal void updateSpiralShips(GmContext* context, GameState& state, float dt) 
     object.position += entity.velocity * dt;
     object.position.z += scrollDistance;
 
-    if (isBehindGameField(state.gameFieldCenter, object.position)) {
+    if (isScrolledOutOfBounds(state, object.position)) {
       Gm_VectorRemove(state.spiralShips, entity);
 
       continue;
@@ -171,7 +171,7 @@ internal void updateSpiralShips(GmContext* context, GameState& state, float dt) 
 
     commit(object);
 
-    if (time_since(entity.lastBulletFireTime) > 0.5f) {
+    if (time_since(entity.lastBulletFireTime) > 0.2f) {
       Vec3f left = object.rotation.getLeftDirection();
 
       spawnEnemyBullet(context, state, {
