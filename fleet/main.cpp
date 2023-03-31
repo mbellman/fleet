@@ -2,52 +2,11 @@
 
 #include "Gamma.h"
 
+#include "game_types.h"
+#include "game_constants.h"
 #include "fleet_macros.h"
 
 using namespace Gamma;
-
-// @todo move to game constants
-constexpr static float MAX_DT = 1.f / 30.f;
-constexpr static float LEVEL_1_ALTITUDE = 5000.f;
-constexpr static float PLAYER_ACCELERATION_RATE = 5000.f;
-constexpr static float MAX_VELOCITY = 500.f;
-constexpr static u16 TOTAL_PLAYER_BULLETS = 100;
-constexpr static u16 TOTAL_ENEMY_BULLETS = 500;
-
-struct Bounds {
-  Vec3f top;
-  Vec3f bottom;
-};
-
-struct Bullet {
-  Vec3f velocity = Vec3f(0.f);
-  Vec3f position = Vec3f(0.f);
-  Vec3f color = Vec3f(0.f);
-  float scale = 0.f;
-};
-
-struct Enemy {
-  u16 index = 0;
-  Vec3f velocity = Vec3f(0.f);
-  float lastBulletFireTime = 0.f;
-  float health = 100.f;
-
-  bool operator==(const Enemy& enemy) {
-    return index == enemy.index;
-  }
-};
-
-struct SpiralShip : Enemy {};
-
-enum EnemyType {
-  SPIRAL_SHIP
-};
-
-struct EnemySpawn {
-  float time;
-  Vec3f offset;
-  EnemyType type;
-};
 
 static std::vector<EnemySpawn> LEVEL_1_ENEMY_SPAWNS = {
   {
@@ -71,27 +30,6 @@ static std::vector<EnemySpawn> LEVEL_1_ENEMY_SPAWNS = {
     .offset = Vec3f(200.f, 0, 500.f),
     .type = SPIRAL_SHIP
   }
-};
-
-struct GameState {
-  Vec3f gameFieldCenter;
-
-  Vec3f velocity;
-  Vec3f offset;
-  Bounds bounds;
-
-  float levelStartTime = 0.f;
-
-  u8 bulletTier = 2;
-  std::vector<Bullet> playerBullets;
-  std::vector<Bullet> enemyBullets;
-  float lastPlayerBulletFireTime = 0.f;
-  u16 nextPlayerBulletIndex = 0;
-  u16 nextEnemyBulletIndex = 0;
-
-  std::vector<EnemySpawn> remainingEnemySpawns;
-
-  std::vector<SpiralShip> spiralShips;
 };
 
 internal Vec3f calculateGameFieldCenter(const Vec3f& cameraPosition) {
@@ -195,104 +133,103 @@ internal void updateSpiralShips(GmContext* context, GameState& state, float dt) 
   }
 }
 
-internal void updateEnemyShips(GmContext* context, GameState& state, float dt) {
-  updateSpiralShips(context, state, dt);
+internal void initializeScene(GmContext* context, GameState& state) {
+  auto& camera = get_camera();
+
+  context->scene.zNear = 1.f;
+  context->scene.zFar = 10000.f;
+
+  context->scene.sky.sunDirection = Vec3f(0, 1.f, 0.5f).unit();
+  context->scene.sky.sunColor = Vec3f(1.f, 0.8f, 0.5f);
+  context->scene.sky.atmosphereColor = Vec3f(1.f);
+
+  camera.position.y = LEVEL_1_ALTITUDE;
+  camera.position.z = -250000.f;
+  camera.orientation.pitch = Gm_HALF_PI * 0.7f;
+  camera.rotation = camera.orientation.toQuaternion();
+
+  // @todo calculate this dynamically
+  state.bounds.top = Vec3f(450.f, 0, 350.f);
+  state.bounds.bottom = Vec3f(300.f, 0, -120.f);
+
+  auto& light = create_light(LightType::DIRECTIONAL);
+
+  light.color = Vec3f(1.f, 0.9f, 0.8f);
+  light.direction = Vec3f(0, -1.f, 1.f);
+
+  auto& flash = create_light(LightType::POINT);
+
+  flash.color = Vec3f(1.f);
+  flash.radius = 100.f;
+  flash.power = 0.f;
+
+  save_light("muzzle-flash", &flash);
+}
+
+internal void initializeMeshes(GmContext* context, GameState& state) {
+  auto& camera = get_camera();
+
+  add_mesh("ocean", 1, Mesh::Plane(2));
+  add_mesh("ocean-floor", 1, Mesh::Plane(2));
+  add_mesh("main-ship", 1, Mesh::Model("./fleet/assets/main-ship.obj"));
+  add_mesh("bullet", TOTAL_PLAYER_BULLETS, Mesh::Sphere(6));
+  add_mesh("bullet-glow", TOTAL_PLAYER_BULLETS, Mesh::Particles());
+  add_mesh("enemy-bullet", TOTAL_ENEMY_BULLETS, Mesh::Sphere(6));
+  add_mesh("enemy-bullet-glow", TOTAL_ENEMY_BULLETS, Mesh::Particles());
+
+  mesh("ocean")->type = MeshType::WATER;
+  mesh("main-ship")->roughness = 0.1f;
+  // mesh("bullet")->emissivity = 0.5f;
+  // mesh("enemy-bullet")->emissivity = 0.5f;
+
+  for (u16 i = 0; i < TOTAL_PLAYER_BULLETS; i++) {
+    auto& bullet = create_object_from("bullet");
+    auto& glow = create_object_from("bullet-glow");
+
+    bullet.scale = Vec3f(0.f);
+    glow.scale = Vec3f(0.f);
+  }
+
+  for (u16 i = 0; i < TOTAL_ENEMY_BULLETS; i++) {
+    auto& bullet = create_object_from("enemy-bullet");
+    auto& glow = create_object_from("enemy-bullet-glow");
+
+    bullet.scale = Vec3f(0.f);
+    glow.scale = Vec3f(0.);
+  }
+
+  auto& ocean = create_object_from("ocean");
+  auto& floor = create_object_from("ocean-floor");
+  auto& player = create_object_from("main-ship");
+
+  ocean.scale = Vec3f(10000.f, 1.f, 10000.f);
+
+  floor.position = ocean.position - Vec3f(0, 500.f, 0);
+  floor.scale = ocean.scale;
+  floor.color = Vec3f(0.1f, 0.75f, 0.75f);
+
+  player.position = camera.position - Vec3f(0, 500.f, 0) + Vec3f(0, 0, 200.f) + state.offset;
+  player.scale = Vec3f(30.f);
+  player.color = Vec3f(1.f);
+
+  commit(ocean);
+  commit(floor);
+  commit(player);
+}
+
+internal void initializeEntities(GmContext* context, GameState& state) {
+  add_mesh("spiral-ship", 10, Mesh::Cube());
+
+  state.playerBullets.reserve(TOTAL_PLAYER_BULLETS);
+  state.enemyBullets.reserve(TOTAL_ENEMY_BULLETS);
 }
 
 internal void initializeGame(GmContext* context, GameState& state) {
-  auto& camera = get_camera();
+  initializeScene(context, state);
+  initializeMeshes(context, state);
+  initializeEntities(context, state);
 
-  // Engine/scene configuration
-  {
-    context->scene.zNear = 1.f;
-    context->scene.zFar = 10000.f;
-
-    context->scene.sky.sunDirection = Vec3f(0, 1.f, 0.5f).unit();
-    context->scene.sky.sunColor = Vec3f(1.f, 0.8f, 0.5f);
-    context->scene.sky.atmosphereColor = Vec3f(1.f);
-
-    camera.position.y = LEVEL_1_ALTITUDE;
-    camera.position.z = -250000.f;
-    camera.orientation.pitch = Gm_HALF_PI * 0.7f;
-    camera.rotation = camera.orientation.toQuaternion();
-
-    // @todo calculate this dynamically
-    state.bounds.top = Vec3f(450.f, 0, 350.f);
-    state.bounds.bottom = Vec3f(300.f, 0, -120.f);
-
-    auto& light = create_light(LightType::DIRECTIONAL);
-
-    light.color = Vec3f(1.f, 0.9f, 0.8f);
-    light.direction = Vec3f(0, -1.f, 1.f);
-
-    auto& flash = create_light(LightType::POINT);
-
-    flash.color = Vec3f(1.f);
-    flash.radius = 100.f;
-    flash.power = 0.f;
-
-    save_light("muzzle-flash", &flash);
-
-    Gm_EnableFlags(GammaFlags::VSYNC);
-  }
-
-  // Global meshes/objects
-  {
-    add_mesh("ocean", 1, Mesh::Plane(2));
-    add_mesh("ocean-floor", 1, Mesh::Plane(2));
-    add_mesh("main-ship", 1, Mesh::Model("./fleet/assets/main-ship.obj"));
-    add_mesh("bullet", TOTAL_PLAYER_BULLETS, Mesh::Sphere(6));
-    add_mesh("bullet-glow", TOTAL_PLAYER_BULLETS, Mesh::Particles());
-    add_mesh("enemy-bullet", TOTAL_ENEMY_BULLETS, Mesh::Sphere(6));
-    add_mesh("enemy-bullet-glow", TOTAL_ENEMY_BULLETS, Mesh::Particles());
-
-    mesh("ocean")->type = MeshType::WATER;
-    mesh("main-ship")->roughness = 0.1f;
-    // mesh("bullet")->emissivity = 0.5f;
-    // mesh("enemy-bullet")->emissivity = 0.5f;
-
-    for (u16 i = 0; i < TOTAL_PLAYER_BULLETS; i++) {
-      auto& bullet = create_object_from("bullet");
-      auto& glow = create_object_from("bullet-glow");
-
-      bullet.scale = Vec3f(0.f);
-      glow.scale = Vec3f(0.f);
-    }
-
-    for (u16 i = 0; i < TOTAL_ENEMY_BULLETS; i++) {
-      auto& bullet = create_object_from("enemy-bullet");
-      auto& glow = create_object_from("enemy-bullet-glow");
-
-      bullet.scale = Vec3f(0.f);
-      glow.scale = Vec3f(0.);
-    }
-
-    auto& ocean = create_object_from("ocean");
-    auto& floor = create_object_from("ocean-floor");
-    auto& player = create_object_from("main-ship");
-
-    ocean.scale = Vec3f(10000.f, 1.f, 10000.f);
-
-    floor.position = ocean.position - Vec3f(0, 500.f, 0);
-    floor.scale = ocean.scale;
-    floor.color = Vec3f(0.1f, 0.75f, 0.75f);
-
-    player.position = camera.position - Vec3f(0, 500.f, 0) + Vec3f(0, 0, 200.f) + state.offset;
-    player.scale = Vec3f(30.f);
-    player.color = Vec3f(1.f);
-
-    commit(ocean);
-    commit(floor);
-    commit(player);
-  }
-
-  // Entity initialization
-  {
-    add_mesh("spiral-ship", 10, Mesh::Cube());
-
-    state.playerBullets.reserve(TOTAL_PLAYER_BULLETS);
-    state.enemyBullets.reserve(TOTAL_ENEMY_BULLETS);
-  }
+  Gm_EnableFlags(GammaFlags::VSYNC);
 
   state.levelStartTime = get_scene_time();
 
@@ -304,254 +241,265 @@ internal void initializeGame(GmContext* context, GameState& state) {
   }
 }
 
+internal void updateScrollOffset(GmContext* context, GameState& state, float dt) {
+  auto& camera = get_camera();
+  const float scrollDistance = 2000.f * dt;
+
+  camera.position.z += scrollDistance;
+
+  state.gameFieldCenter = calculateGameFieldCenter(camera.position);
+}
+
+internal void handleInput(GmContext* context, GameState& state, float dt) {
+  auto& input = get_input();
+  Vec3f acceleration;
+
+  if (input.isKeyHeld(Key::ARROW_UP)) {
+    acceleration.z += PLAYER_ACCELERATION_RATE * dt;
+  }
+
+  if (input.isKeyHeld(Key::ARROW_DOWN)) {
+    acceleration.z -= PLAYER_ACCELERATION_RATE * dt;
+  }
+
+  if (input.isKeyHeld(Key::ARROW_LEFT)) {
+    acceleration.x -= PLAYER_ACCELERATION_RATE * dt;
+  }
+
+  if (input.isKeyHeld(Key::ARROW_RIGHT)) {
+    acceleration.x += PLAYER_ACCELERATION_RATE * dt;
+  }
+
+  float verticalAlpha = (state.offset.z - state.bounds.bottom.z) / (state.bounds.top.z - state.bounds.bottom.z);
+  float verticalLimitFactor = 2.f * Gm_Absf(verticalAlpha - 0.5f);
+  if (verticalLimitFactor > 1.f) verticalLimitFactor = 1.f;
+  verticalLimitFactor = 1.f - powf(verticalLimitFactor, 10.f);
+
+  if (
+    (acceleration.z < 0.f && state.offset.z < 0.f) ||
+    (acceleration.z > 0.f && state.offset.z > 0.f)
+  ) {
+    acceleration.z *= verticalLimitFactor;
+    state.velocity.z *= verticalLimitFactor;
+  }
+
+  float horizontalLimit = Gm_Lerpf(state.bounds.bottom.x, state.bounds.top.x, verticalAlpha);
+  float horizontalAlpha = 1.f - (-1.f * (state.offset.x - horizontalLimit) / (horizontalLimit * 2.f));
+  float horizontalLimitFactor = 2.f * Gm_Absf(horizontalAlpha - 0.5f);
+  if (horizontalLimitFactor > 1.f) horizontalLimitFactor = 1.f;
+  horizontalLimitFactor = 1.f - powf(horizontalLimitFactor, 10.f);
+
+  if (
+    (acceleration.x < 0.f && state.offset.x < 0.f) ||
+    (acceleration.x > 0.f && state.offset.x > 0.f)
+  ) {
+    acceleration.x *= horizontalLimitFactor;
+    state.velocity.x *= horizontalLimitFactor;
+  }
+
+  if (state.offset.x < -horizontalLimit) {
+    float delta = -horizontalLimit - state.offset.x;
+
+    acceleration.x += 50.f * delta * dt;
+  } else if (state.offset.x > horizontalLimit) {
+    float delta = state.offset.x - horizontalLimit;
+
+    acceleration.x -= 50.f * delta * dt;
+  }
+
+  state.velocity += acceleration;
+
+  if (state.velocity.magnitude() > MAX_VELOCITY) {
+    state.velocity = state.velocity.unit() * MAX_VELOCITY;
+  }
+
+  state.offset += state.velocity * dt;
+
+  state.velocity *= (1.f - 7.f * dt);
+}
+
+internal void updatePlayerShips(GmContext* context, GameState& state, float dt) {
+  auto& camera = get_camera();
+  auto& player = get_player();
+  float roll = -0.25f * (state.velocity.x / MAX_VELOCITY);
+  float pitch = 0.25f * (state.velocity.z / MAX_VELOCITY);
+
+  player.position = camera.position - Vec3f(0, 500.f, 0) + Vec3f(0, 0, 200.f) + state.offset;
+  player.rotation = Quaternion::fromAxisAngle(Vec3f(0, 0, 1), roll) * Quaternion::fromAxisAngle(Vec3f(1, 0, 0), pitch);
+
+  commit(player);
+}
+
+internal void updateEnemyShips(GmContext* context, GameState& state, float dt) {
+  updateSpiralShips(context, state, dt);
+}
+
+internal void handleNewEnemySpawns(GmContext* context, GameState& state, float dt) {
+  float runningTime = time_since(state.levelStartTime);
+
+  while (1) {
+    if (state.remainingEnemySpawns.size() == 0) {
+      break;
+    }
+
+    auto& nextSpawn = state.remainingEnemySpawns.back();
+
+    if (runningTime >= nextSpawn.time) {
+      spawnEnemy(context, state, nextSpawn.type, nextSpawn.offset);
+
+      state.remainingEnemySpawns.pop_back();
+    } else {
+      break;
+    }
+  }
+}
+
+internal void updatePlayerBullets(GmContext* context, GameState& state, float dt) {
+  auto& input = get_input();
+  const float scrollDistance = 2000.f * dt;
+
+  if (
+    input.isKeyHeld(Key::SPACE) &&
+    time_since(state.lastPlayerBulletFireTime) >= 0.05f
+  ) {
+    auto& player = get_player();
+
+    // Primary bullet
+    spawnPlayerBullet(context, state, {
+      .velocity = Vec3f(0, 0, 1000.f),
+      .position = player.position,
+      .color = Vec3f(1.f, 0.5f, 0.25f),
+      .scale = 10.f
+    });
+
+    // Tier-1 bullets
+    if (state.bulletTier >= 1) {
+      spawnPlayerBullet(context, state, {
+        .velocity = Vec3f(-200.f, 0, 900.f),
+        .position = player.position,
+        .color = Vec3f(1.f, 0.25f, 0.1f),
+        .scale = 10.f
+      });
+
+      spawnPlayerBullet(context, state, {
+        .velocity = Vec3f(200.f, 0, 900.f),
+        .position = player.position,
+        .color = Vec3f(1.f, 0.25f, 0.1f),
+        .scale = 10.f
+      });
+    }
+
+    // Tier-2 bullets
+    if (state.bulletTier >= 2) {
+      spawnPlayerBullet(context, state, {
+        .velocity = Vec3f(0, 0, 1000.f),
+        .position = player.position - Vec3f(30.f, 0, 0),
+        .color = Vec3f(0.2f, 0.4f, 1.f),
+        .scale = 6.f
+      });
+
+      spawnPlayerBullet(context, state, {
+        .velocity = Vec3f(0, 0, 1000.f),
+        .position = player.position + Vec3f(30.f, 0, 0),
+        .color = Vec3f(0.2f, 0.4f, 1.f),
+        .scale = 6.f
+      });
+    }
+
+    get_light("muzzle-flash").power = 5.f;
+
+    state.lastPlayerBulletFireTime = get_scene_time();
+  }
+
+  // Update bullet/glow position
+  auto& bullets = objects("bullet");
+  auto& glows = objects("bullet-glow");
+
+  for (u16 i = 0; i < TOTAL_PLAYER_BULLETS; i++) {
+    auto& playerBullet = state.playerBullets[i];
+    auto& bullet = bullets[i];
+    auto& glow = glows[i];
+
+    playerBullet.position += playerBullet.velocity * dt;
+    playerBullet.position.z += scrollDistance;
+
+    bullet.position = glow.position = playerBullet.position;
+    bullet.color = playerBullet.color;
+    bullet.scale = Vec3f(playerBullet.scale);
+
+    glow.position = bullet.position;
+    glow.color = Vec3f(playerBullet.color);
+    glow.scale = Vec3f(playerBullet.scale * 2.f);
+
+    commit(bullet);
+    commit(glow);
+  }
+}
+
+internal void updateEnemyBullets(GmContext* context, GameState& state, float dt) {
+  auto& bullets = objects("enemy-bullet");
+  auto& glows = objects("enemy-bullet-glow");
+  const float scrollDistance = 2000.f * dt;
+
+  for (u16 i = 0; i < TOTAL_ENEMY_BULLETS; i++) {
+    auto& enemyBullet = state.enemyBullets[i];
+    auto& bullet = bullets[i];
+    auto& glow = glows[i];
+
+    enemyBullet.position += enemyBullet.velocity * dt;
+    enemyBullet.position.z += scrollDistance;
+
+    bullet.position = glow.position = enemyBullet.position;
+    bullet.color = enemyBullet.color;
+    bullet.scale = Vec3f(enemyBullet.scale);
+
+    glow.position = bullet.position;
+    glow.color = Vec3f(enemyBullet.color);
+    glow.scale = Vec3f(enemyBullet.scale * 2.f);
+
+    commit(bullet);
+    commit(glow);
+  }
+}
+
+internal void updateLights(GmContext* context, GameState& state, float dt) {
+  auto& player = get_player();
+  auto& flash = get_light("muzzle-flash");
+
+  flash.position = player.position + Vec3f(0, player.scale.y, player.scale.z * 2.f);
+
+  if (time_since(state.lastPlayerBulletFireTime) > 0.04f) {
+    flash.power = 0.f;
+  }
+}
+
+internal void updateOcean(GmContext* context, GameState& state, float dt) {
+  auto& camera = get_camera();
+  auto& ocean = objects("ocean")[0];
+  auto& floor = objects("ocean-floor")[0];
+
+  ocean.position.x = camera.position.x;
+  ocean.position.z = camera.position.z;
+  floor.position = ocean.position - Vec3f(0, 500.f, 0);
+
+  commit(ocean);
+  commit(floor);
+}
+
 internal void updateGame(GmContext* context, GameState& state, float dt) {
   auto& camera = get_camera();
   auto& input = get_input();
   const float scrollDistance = 2000.f * dt;
 
-  // Scroll level
-  {
-    camera.position.z += scrollDistance;
-
-    state.gameFieldCenter = calculateGameFieldCenter(camera.position);
-  }
-
-  // Handle directional input
-  {
-    Vec3f acceleration;
-
-    if (input.isKeyHeld(Key::ARROW_UP)) {
-      acceleration.z += PLAYER_ACCELERATION_RATE * dt;
-    }
-
-    if (input.isKeyHeld(Key::ARROW_DOWN)) {
-      acceleration.z -= PLAYER_ACCELERATION_RATE * dt;
-    }
-
-    if (input.isKeyHeld(Key::ARROW_LEFT)) {
-      acceleration.x -= PLAYER_ACCELERATION_RATE * dt;
-    }
-
-    if (input.isKeyHeld(Key::ARROW_RIGHT)) {
-      acceleration.x += PLAYER_ACCELERATION_RATE * dt;
-    }
-
-    float verticalAlpha = (state.offset.z - state.bounds.bottom.z) / (state.bounds.top.z - state.bounds.bottom.z);
-    float verticalLimitFactor = 2.f * Gm_Absf(verticalAlpha - 0.5f);
-    if (verticalLimitFactor > 1.f) verticalLimitFactor = 1.f;
-    verticalLimitFactor = 1.f - powf(verticalLimitFactor, 10.f);
-
-    if (
-      (acceleration.z < 0.f && state.offset.z < 0.f) ||
-      (acceleration.z > 0.f && state.offset.z > 0.f)
-    ) {
-      acceleration.z *= verticalLimitFactor;
-      state.velocity.z *= verticalLimitFactor;
-    }
-
-    float horizontalLimit = Gm_Lerpf(state.bounds.bottom.x, state.bounds.top.x, verticalAlpha);
-    float horizontalAlpha = 1.f - (-1.f * (state.offset.x - horizontalLimit) / (horizontalLimit * 2.f));
-    float horizontalLimitFactor = 2.f * Gm_Absf(horizontalAlpha - 0.5f);
-    if (horizontalLimitFactor > 1.f) horizontalLimitFactor = 1.f;
-    horizontalLimitFactor = 1.f - powf(horizontalLimitFactor, 10.f);
-
-    if (
-      (acceleration.x < 0.f && state.offset.x < 0.f) ||
-      (acceleration.x > 0.f && state.offset.x > 0.f)
-    ) {
-      acceleration.x *= horizontalLimitFactor;
-      state.velocity.x *= horizontalLimitFactor;
-    }
-
-    if (state.offset.x < -horizontalLimit) {
-      float delta = -horizontalLimit - state.offset.x;
-
-      acceleration.x += 50.f * delta * dt;
-    } else if (state.offset.x > horizontalLimit) {
-      float delta = state.offset.x - horizontalLimit;
-
-      acceleration.x -= 50.f * delta * dt;
-    }
-
-    state.velocity += acceleration;
-
-    if (state.velocity.magnitude() > MAX_VELOCITY) {
-      state.velocity = state.velocity.unit() * MAX_VELOCITY;
-    }
-
-    state.offset += state.velocity * dt;
-
-    state.velocity *= (1.f - 7.f * dt);
-  }
-
-  // Update player ships
-  {
-    auto& player = get_player();
-    float roll = -0.25f * (state.velocity.x / MAX_VELOCITY);
-    float pitch = 0.25f * (state.velocity.z / MAX_VELOCITY);
-
-    player.position = camera.position - Vec3f(0, 500.f, 0) + Vec3f(0, 0, 200.f) + state.offset;
-    player.rotation = Quaternion::fromAxisAngle(Vec3f(0, 0, 1), roll) * Quaternion::fromAxisAngle(Vec3f(1, 0, 0), pitch);
-
-    commit(player);
-  }
-
-  // Update enemy ships
-  {
-    updateEnemyShips(context, state, dt);
-  }
-
-  // Spawn enemies
-  {
-    float runningTime = time_since(state.levelStartTime);
-
-    while (1) {
-      if (state.remainingEnemySpawns.size() == 0) {
-        break;
-      }
-
-      auto& nextSpawn = state.remainingEnemySpawns.back();
-
-      if (runningTime >= nextSpawn.time) {
-        spawnEnemy(context, state, nextSpawn.type, nextSpawn.offset);
-
-        state.remainingEnemySpawns.pop_back();
-      } else {
-        break;
-      }
-    }
-  }
-
-  // Update player bullets
-  {
-    if (
-      input.isKeyHeld(Key::SPACE) &&
-      time_since(state.lastPlayerBulletFireTime) >= 0.05f
-    ) {
-      auto& player = get_player();
-
-      // Primary bullet
-      spawnPlayerBullet(context, state, {
-        .velocity = Vec3f(0, 0, 1000.f),
-        .position = player.position,
-        .color = Vec3f(1.f, 0.5f, 0.25f),
-        .scale = 10.f
-      });
-
-      // Tier-1 bullets
-      if (state.bulletTier >= 1) {
-        spawnPlayerBullet(context, state, {
-          .velocity = Vec3f(-200.f, 0, 900.f),
-          .position = player.position,
-          .color = Vec3f(1.f, 0.25f, 0.1f),
-          .scale = 10.f
-        });
-
-        spawnPlayerBullet(context, state, {
-          .velocity = Vec3f(200.f, 0, 900.f),
-          .position = player.position,
-          .color = Vec3f(1.f, 0.25f, 0.1f),
-          .scale = 10.f
-        });
-      }
-
-      // Tier-2 bullets
-      if (state.bulletTier >= 2) {
-        spawnPlayerBullet(context, state, {
-          .velocity = Vec3f(0, 0, 1000.f),
-          .position = player.position - Vec3f(30.f, 0, 0),
-          .color = Vec3f(0.2f, 0.4f, 1.f),
-          .scale = 6.f
-        });
-
-        spawnPlayerBullet(context, state, {
-          .velocity = Vec3f(0, 0, 1000.f),
-          .position = player.position + Vec3f(30.f, 0, 0),
-          .color = Vec3f(0.2f, 0.4f, 1.f),
-          .scale = 6.f
-        });
-      }
-
-      get_light("muzzle-flash").power = 5.f;
-
-      state.lastPlayerBulletFireTime = get_scene_time();
-    }
-
-    // Update bullet/glow position
-    auto& bullets = objects("bullet");
-    auto& glows = objects("bullet-glow");
-
-    for (u16 i = 0; i < TOTAL_PLAYER_BULLETS; i++) {
-      auto& playerBullet = state.playerBullets[i];
-      auto& bullet = bullets[i];
-      auto& glow = glows[i];
-
-      playerBullet.position += playerBullet.velocity * dt;
-      playerBullet.position.z += scrollDistance;
-
-      bullet.position = glow.position = playerBullet.position;
-      bullet.color = playerBullet.color;
-      bullet.scale = Vec3f(playerBullet.scale);
-
-      glow.position = bullet.position;
-      glow.color = Vec3f(playerBullet.color);
-      glow.scale = Vec3f(playerBullet.scale * 2.f);
-
-      commit(bullet);
-      commit(glow);
-    }
-  }
-
-  // Update enemy bullets
-  {
-    auto& bullets = objects("enemy-bullet");
-    auto& glows = objects("enemy-bullet-glow");
-
-    for (u16 i = 0; i < TOTAL_ENEMY_BULLETS; i++) {
-      auto& enemyBullet = state.enemyBullets[i];
-      auto& bullet = bullets[i];
-      auto& glow = glows[i];
-
-      enemyBullet.position += enemyBullet.velocity * dt;
-      enemyBullet.position.z += scrollDistance;
-
-      bullet.position = glow.position = enemyBullet.position;
-      bullet.color = enemyBullet.color;
-      bullet.scale = Vec3f(enemyBullet.scale);
-
-      glow.position = bullet.position;
-      glow.color = Vec3f(enemyBullet.color);
-      glow.scale = Vec3f(enemyBullet.scale * 2.f);
-
-      commit(bullet);
-      commit(glow);
-    }
-  }
-
-  // Handle lights
-  {
-    auto& player = get_player();
-    auto& flash = get_light("muzzle-flash");
-
-    flash.position = player.position + Vec3f(0, player.scale.y, player.scale.z * 2.f);
-
-    if (time_since(state.lastPlayerBulletFireTime) > 0.04f) {
-      flash.power = 0.f;
-    }
-  }
-
-  // Sync ocean plane position to camera
-  {
-    auto& ocean = objects("ocean")[0];
-    auto& floor = objects("ocean-floor")[0];
-
-    ocean.position.x = camera.position.x;
-    ocean.position.z = camera.position.z;
-    floor.position = ocean.position - Vec3f(0, 500.f, 0);
-
-    commit(ocean);
-    commit(floor);
-  }
+  updateScrollOffset(context, state, dt);
+  handleInput(context, state, dt);
+  updatePlayerShips(context, state, dt);
+  updateEnemyShips(context, state, dt);
+  handleNewEnemySpawns(context, state, dt);
+  updatePlayerBullets(context, state, dt);
+  updateEnemyBullets(context, state, dt);
+  updateLights(context, state, dt);
+  updateOcean(context, state, dt);
 
   context->scene.sceneTime += dt;
 

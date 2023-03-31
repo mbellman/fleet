@@ -239,6 +239,8 @@
     <ClInclude Include="external\sdl2\include\SDL_vulkan.h" />
     <ClInclude Include="external\sdl_image\include\SDL_image.h" />
     <ClInclude Include="fleet\fleet_macros.h" />
+    <ClInclude Include="fleet\game_constants.h" />
+    <ClInclude Include="fleet\game_types.h" />
     <ClInclude Include="fleet\gamma_flags.h" />
     <ClInclude Include="gamma\Gamma.h" />
     <ClInclude Include="gamma\math\constants.h" />
