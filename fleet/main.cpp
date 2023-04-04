@@ -15,18 +15,18 @@ static std::vector<EnemySpawn> LEVEL_1_ENEMY_SPAWNS = {
     .type = SPIRAL_SHIP
   },
   {
-    .time = 0.f,
+    .time = 2.f,
     .offset = Vec3f(200.f, 0, 500.f),
     .type = SPIRAL_SHIP
   },
 
   {
-    .time = 5.f,
+    .time = 4.f,
     .offset = Vec3f(-200.f, 0, 500.f),
     .type = SPIRAL_SHIP
   },
   {
-    .time = 5.f,
+    .time = 6.f,
     .offset = Vec3f(200.f, 0, 500.f),
     .type = SPIRAL_SHIP
   }
@@ -39,6 +39,23 @@ internal Vec3f calculateGameFieldCenter(const Vec3f& cameraPosition) {
 // @todo consider different level view orientations
 internal bool isScrolledOutOfBounds(const GameState& state, const Vec3f& position) {
   return position.z < (state.gameFieldCenter.z + state.bounds.bottom.z);
+}
+
+internal bool isBulletColliding(const Bullet& bullet, const Vec3f& target, float padding) {
+  if (bullet.scale == 0.f) {
+    return false;
+  }
+
+  if (
+    (bullet.position.x + bullet.scale < target.x - padding) ||
+    (bullet.position.x - bullet.scale > target.x + padding) ||
+    (bullet.position.z + bullet.scale < target.z - padding) ||
+    (bullet.position.z - bullet.scale > target.z + padding)
+  ) {
+    return false;
+  }
+
+  return true;
 }
 
 internal void spawnPlayerBullet(GmContext* context, GameState& state, const Bullet& bullet) {
@@ -58,11 +75,20 @@ internal void spawnEnemyBullet(GmContext* context, GameState& state, const Bulle
 }
 
 internal Object& requestEnemyObject(GmContext* context, const std::string& objectName, u32 totalActiveEntities) {
-  if (objects(objectName).totalActive() > totalActiveEntities) {
-    return objects(objectName)[totalActiveEntities];
-  } else {
-    return create_object_from(objectName);
+  auto& existingObjects = objects(objectName);
+
+  if (existingObjects.totalActive() > totalActiveEntities) {
+    // When there are more active objects than active entities,
+    // reuse an existing object. Pick the first one with a scale
+    // of 0, used to mark objects as eligible for reuse.
+    for (auto& object : existingObjects) {
+      if (object.scale.x == 0.f) {
+        return object;
+      }
+    }
   }
+
+  return create_object_from(objectName);
 }
 
 internal void spawnEnemy(GmContext* context, GameState& state, EnemyType type, const Vec3f offset) {
@@ -94,13 +120,23 @@ internal void updateSpiralShips(GmContext* context, GameState& state, float dt) 
     auto& entity = state.spiralShips[index];
     auto& object = spiralShipObjects[entity.index];
 
-    entity.velocity.x = sinf(t * 2.f) * 50.f;
-
     object.position += entity.velocity * dt;
     object.position.z += scrollDistance;
 
-    if (isScrolledOutOfBounds(state, object.position)) {
+    for (auto& bullet : state.playerBullets) {
+      if (isBulletColliding(bullet, object.position, object.scale.x)) {
+        entity.health -= 10.f;
+        bullet.scale = 0.f;
+      }
+    }
+
+    if (isScrolledOutOfBounds(state, object.position) || entity.health <= 0.f) {
       Gm_VectorRemove(state.spiralShips, entity);
+
+      // @todo hide/animate out destroyed ships
+      object.scale = Vec3f(0.f);
+
+      commit(object);
 
       continue;
     }
@@ -220,8 +256,8 @@ internal void initializeMeshes(GmContext* context, GameState& state) {
 internal void initializeEntities(GmContext* context, GameState& state) {
   add_mesh("spiral-ship", 10, Mesh::Cube());
 
-  state.playerBullets.reserve(TOTAL_PLAYER_BULLETS);
-  state.enemyBullets.reserve(TOTAL_ENEMY_BULLETS);
+  state.playerBullets.resize(TOTAL_PLAYER_BULLETS);
+  state.enemyBullets.resize(TOTAL_ENEMY_BULLETS);
 }
 
 internal void initializeGame(GmContext* context, GameState& state) {
